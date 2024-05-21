@@ -1,0 +1,120 @@
+import socket
+import threading
+import pygame
+import sys
+
+
+WIDTH, HEIGHT = 600, 600
+LINE_WIDTH, CIRCLE_WIDTH, CROSS_WIDTH, SPACE = 15, 15, 25, WIDTH // 12
+BOARD_ROWS, BOARD_COLS = 3, 3
+SQUARE_SIZE, CIRCLE_RADIUS = WIDTH // BOARD_COLS, WIDTH // 9
+RED, BG_COLOR, LINE_COLOR = (255, 0, 0), (28, 170, 156), (23, 145, 135)
+CIRCLE_COLOR, CROSS_COLOR = (239, 231, 200), (84, 84, 84)
+
+
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption('Tic Tac Toe')
+screen.fill(BG_COLOR)
+
+board = [[0] * BOARD_COLS for _ in range(BOARD_ROWS)]
+
+
+cross_img = pygame.image.load('cross.png')
+cross_img = pygame.transform.scale(cross_img, (SQUARE_SIZE - 2 * SPACE, SQUARE_SIZE - 2 * SPACE))
+
+def draw_lines():
+    for row in range(1, BOARD_ROWS):
+        pygame.draw.line(screen, LINE_COLOR, (0, row * SQUARE_SIZE), (WIDTH, row * SQUARE_SIZE), LINE_WIDTH)
+    for col in range(1, BOARD_COLS):
+        pygame.draw.line(screen, LINE_COLOR, (col * SQUARE_SIZE, 0), (col * SQUARE_SIZE, HEIGHT), LINE_WIDTH)
+
+def draw_figures():
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            if board[row][col] == 1:
+                pygame.draw.circle(screen, CIRCLE_COLOR, (col * SQUARE_SIZE + SQUARE_SIZE//2, row * SQUARE_SIZE + SQUARE_SIZE//2), CIRCLE_RADIUS, CIRCLE_WIDTH)
+            elif board[row][col] == 2:
+                cross_rect = cross_img.get_rect(center=(col * SQUARE_SIZE + SQUARE_SIZE // 2, row * SQUARE_SIZE + SQUARE_SIZE // 2))
+                screen.blit(cross_img, cross_rect)
+
+def mark_square(row, col, player):
+    board[row][col] = player
+
+def check_winner():
+    for row in range(BOARD_ROWS):
+        if board[row][0] == board[row][1] == board[row][2] != 0:
+            return board[row][0]
+    for col in range(BOARD_COLS):
+        if board[0][col] == board[1][col] == board[2][col] != 0:
+            return board[0][col]
+    if board[0][0] == board[1][1] == board[2][2] != 0:
+        return board[0][0]
+    if board[2][0] == board[1][1] == board[0][2] != 0:
+        return board[2][0]
+    return 0
+
+def is_board_full():
+    return all(board[row][col] != 0 for row in range(BOARD_ROWS) for col in range(BOARD_COLS))
+
+def restart():
+    global board
+    screen.fill(BG_COLOR)
+    draw_lines()
+    board = [[0] * BOARD_COLS for _ in range(BOARD_ROWS)]
+
+def receive_messages(client_socket):
+    global game_over, player, player_symbol
+    while True:
+        try:
+            message = client_socket.recv(1024).decode('utf-8')
+            if message.startswith("PLAY"):
+                _, move = message.split()
+                row, col = map(int, move.split(','))
+                mark_square(row, col, 1 if player_symbol == 'O' else 2)
+                draw_figures()
+                if check_winner() or is_board_full():
+                    game_over = True
+            elif message.startswith("START_GAME"):
+                _, symbol = message.split()
+                player_symbol = symbol
+                player = 1 if symbol == 'X' else 2
+                restart()
+                game_over = False
+        except Exception as e:
+            print(f"Error: {e}")
+            client_socket.close()
+            break
+
+def main():
+    global game_over, player, player_symbol
+    player_symbol = None
+    game_over = False
+
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect(('127.0.0.1', 12345))
+
+    threading.Thread(target=receive_messages, args=(client_socket,)).start()
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                client_socket.send(b"EXIT")
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and not game_over and player_symbol:
+                mouseX, mouseY = event.pos
+                clicked_row, clicked_col = mouseY // SQUARE_SIZE, mouseX // SQUARE_SIZE
+
+                if board[clicked_row][clicked_col] == 0:
+                    mark_square(clicked_row, clicked_col, player)
+                    draw_figures()
+                    client_socket.send(f"PLAY {clicked_row},{clicked_col}".encode('utf-8'))
+                    if check_winner() or is_board_full():
+                        game_over = True
+
+        pygame.display.update()
+
+if __name__ == "__main__":
+    draw_lines()
+    main()
