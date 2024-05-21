@@ -1,0 +1,115 @@
+import socket
+import threading
+import random
+
+clients = {}
+lobbies = {}
+lock = threading.Lock()
+
+class Client:
+    def __init__(self, conn, addr):
+        self.conn = conn
+        self.addr = addr
+        self.username = None
+        self.lobby = None
+        self.symbol = None
+
+def handle_client(client):
+    conn = client.conn
+    try:
+        while msg := conn.recv(1024).decode('utf-8'):
+            command, *args = msg.split()
+            handler = {
+                "REGISTER": handle_register,
+                "LOGIN": handle_login,
+                "CREATE_LOBBY": handle_create_lobby,
+                "JOIN_LOBBY": handle_join_lobby,
+                "START_GAME": handle_start_game,
+                "PLAY": handle_play,
+                "EXIT": handle_exit
+            }.get(command, lambda *args: None)
+            handler(client, *args)
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        handle_exit(client)
+        conn.close()
+
+def handle_register(client, username, password):
+    with lock:
+        if username in clients:
+            client.conn.send(b"USERNAME_TAKEN")
+        else:
+            clients[username] = {'password': password, 'client': client}
+            client.conn.send(b"REGISTER_SUCCESS")
+
+def handle_login(client, username, password):
+    with lock:
+        if username not in clients or clients[username]['password'] != password:
+            client.conn.send(b"LOGIN_FAIL")
+        else:
+            client.username = username
+            clients[username]['client'] = client
+            client.conn.send(b"LOGIN_SUCCESS")
+
+def handle_create_lobby(client, lobby_name):
+    with lock:
+        if lobby_name in lobbies:
+            client.conn.send(b"LOBBY_EXISTS")
+        else:
+            lobbies[lobby_name] = [client]
+            client.lobby = lobby_name
+            client.conn.send(b"LOBBY_CREATED")
+
+def handle_join_lobby(client, lobby_name):
+    with lock:
+        if lobby_name not in lobbies:
+            client.conn.send(b"LOBBY_NOT_FOUND")
+        else:
+            lobbies[lobby_name].append(client)
+            client.lobby = lobby_name
+            client.conn.send(b"JOIN_SUCCESS")
+
+def handle_start_game(client):
+    with lock:
+        lobby_name = client.lobby
+        if not lobby_name or len(lobbies[lobby_name]) < 2:
+            client.conn.send(b"START_FAIL")
+        else:
+            clients_in_lobby = lobbies[lobby_name]
+            symbols = ['X', 'O']
+            random.shuffle(symbols)
+            for i, c in enumerate(clients_in_lobby):
+                c.symbol = symbols[i]
+                c.conn.send(f"START_GAME {c.symbol}".encode('utf-8'))
+
+def handle_play(client, move):
+    with lock:
+        if client.lobby:
+            for c in lobbies[client.lobby]:
+                if c != client:
+                    c.conn.send(f"PLAY {move}".encode('utf-8'))
+
+def handle_exit(client):
+    with lock:
+        if client.lobby:
+            lobbies[client.lobby].remove(client)
+            if not lobbies[client.lobby]:
+                del lobbies[client.lobby]
+        if client.username:
+            del clients[client.username]
+        client.conn.send(b"EXIT_SUCCESS")
+
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('0.0.0.0', 12345))
+    server.listen(5)
+    print("Server started on port 12345")
+
+    while True:
+        conn, addr = server.accept()
+        client = Client(conn, addr)
+        threading.Thread(target=handle_client, args=(client,)).start()
+
+if __name__ == "__main__":
+    main()
