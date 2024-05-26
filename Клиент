@@ -14,7 +14,7 @@ CIRCLE_COLOR, CROSS_COLOR = (239, 231, 200), (84, 84, 84)
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption('Tic Tac Toe')
+pygame.display.set_caption('Крестики-нолики')
 screen.fill(BG_COLOR)
 
 logging.basicConfig(level=logging.INFO)
@@ -72,21 +72,21 @@ def receive_messages(client_socket):
             message = client_socket.recv(1024).decode('utf-8')
             if not message:
                 break
-            if message.startswith("PLAY"):
+            if message.startswith("ХОД"):
                 _, move = message.split()
                 row, col = map(int, move.split(','))
                 mark_square(row, col, 1 if player_symbol == 'O' else 2)
                 draw_figures()
                 if check_winner() or is_board_full():
                     game_over = True
-            elif message.startswith("START_GAME"):
+            elif message.startswith("НАЧАТЬ_ИГРУ"):
                 _, symbol = message.split()
                 player_symbol = symbol
                 player = 1 if symbol == 'X' else 2
                 restart()
                 game_over = False
         except Exception as e:
-            logging.error(f"Error: {e}")
+            logging.error(f"ОШИБКА: {e}")
             client_socket.close()
             break
 def main():
@@ -98,7 +98,7 @@ def main():
     try:
         client_socket.connect(('127.0.0.1', 12345))
     except Exception as e:
-        logging.error(f"Connection error: {e}")
+        logging.error(f"Ошибка подключения: {e}")
         return
 
     threading.Thread(target=receive_messages, args=(client_socket,)).start()
@@ -109,7 +109,7 @@ def main():
                 try:
                     client_socket.send(b"EXIT")
                 except Exception as e:
-                    logging.error(f"Error sending exit message: {e}")
+                    logging.error(f"Ошибка при отправке сообщения о выходе: {e}")
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN and not game_over and player_symbol:
@@ -120,9 +120,9 @@ def main():
                     mark_square(clicked_row, clicked_col, player)
                     draw_figures()
                     try:
-                        client_socket.send(f"PLAY {clicked_row},{clicked_col}".encode('utf-8'))
+                        client_socket.send(f"ХОД {clicked_row},{clicked_col}".encode('utf-8'))
                     except Exception as e:
-                        logging.error(f"Error sending play message: {e}")
+                        logging.error(f"Ошибка при отправке сообщения о воспроизведении: {e}")
                     if check_winner() or is_board_full():
                         game_over = True
 
