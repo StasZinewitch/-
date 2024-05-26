@@ -23,13 +23,13 @@ def handle_client(client):
                 break
             command, *args = msg.split()
             handler = {
-                "REGISTER": handle_register,
-                "LOGIN": handle_login,
-                "CREATE_LOBBY": handle_create_lobby,
-                "JOIN_LOBBY": handle_join_lobby,
-                "START_GAME": handle_start_game,
-                "PLAY": handle_play,
-                "EXIT": handle_exit
+                "РЕГИСТРАЦИЯ": handle_register,
+                "ЛОГИН": handle_login,
+                "СОЗДАТЬ_ЛОББИ": handle_create_lobby,
+                "ПРИСОЕДЕНИТЬСЯ_К_ЛОББИ": handle_join_lobby,
+                "НАЧАТЬ": handle_start_game,
+                "ИГРАТЬ": handle_play,
+                "ВЫХОД": handle_exit
             }.get(command, lambda *args: None)
             handler(client, *args)
     except Exception as e:
@@ -41,73 +41,73 @@ def handle_client(client):
 
 def handle_register(client, username=None, password=None):
     if not username or not password:
-        client.conn.send(b"REGISTER_FAIL")
+        client.conn.send(b"ОШИБКА_РЕГИСТРАЦИИ")
         return
     with lock:
         if username in clients:
-            client.conn.send(b"USERNAME_TAKEN")
+            client.conn.send(b"ИМЯ_ЗАНЯТО")
         else:
-            clients[username] = {'password': password, 'client': client}
-            client.conn.send(b"REGISTER_SUCCESS")
+            clients[username] = {'пароль': password, 'клиент': client}
+            client.conn.send(b"УСПЕШНАЯ_РЕГИСТРАЦИЯ")
 
 def handle_login(client, username=None, password=None):
     if not username or not password:
-        client.conn.send(b"LOGIN_FAIL")
+        client.conn.send(b"ОШИБКА_АВТОРИЗАЦИИ")
         return
     with lock:
-        if username not in clients or clients[username]['password'] != password:
-            client.conn.send(b"LOGIN_FAIL")
+        if username not in clients or clients[username]['пароль'] != password:
+            client.conn.send(b"ОШИБКА_АВТОРИЗАЦИИ")
         else:
             client.username = username
-            clients[username]['client'] = client
-            client.conn.send(b"LOGIN_SUCCESS")
+            clients[username]['клиент'] = client
+            client.conn.send(b"УСПЕШНАЯ_АВТОРИЗАЦИЯ")
 
 def handle_create_lobby(client, lobby_name=None):
     if not lobby_name:
-        client.conn.send(b"LOBBY_CREATE_FAIL")
+        client.conn.send(b"ОШИБКА_СОЗДАНИЯ_ЛОББИ")
         return
     with lock:
         if lobby_name in lobbies:
-            client.conn.send(b"LOBBY_EXISTS")
+            client.conn.send(b"ЛОББИ_УЖЕ_СУЩЕСТВУЕТ")
         else:
             lobbies[lobby_name] = [client]
             client.lobby = lobby_name
-            client.conn.send(b"LOBBY_CREATED")
+            client.conn.send(b"ЛОББИ_СОЗДАННО")
 
 def handle_join_lobby(client, lobby_name=None):
     if not lobby_name:
-        client.conn.send(b"LOBBY_JOIN_FAIL")
+        client.conn.send(b"ОШИБКА_ПРИСОЕДИНЕНИЯ_К_ЛОББИ")
         return
     with lock:
         if lobby_name not in lobbies:
-            client.conn.send(b"LOBBY_NOT_FOUND")
+            client.conn.send(b"ЛОББИ_НЕ_НАЙДЕНО")
         else:
             lobbies[lobby_name].append(client)
             client.lobby = lobby_name
-            client.conn.send(b"JOIN_SUCCESS")
+            client.conn.send(b"УСПЕШНОЕ_ПРИСОЕДИНЕНИЕ")
 
 def handle_start_game(client):
     with lock:
         lobby_name = client.lobby
         if not lobby_name or len(lobbies[lobby_name]) < 2:
-            client.conn.send(b"START_FAIL")
+            client.conn.send(b"ОШИБКА_СТАРТА")
         else:
             clients_in_lobby = lobbies[lobby_name]
             symbols = ['X', 'O']
             random.shuffle(symbols)
             for i, c in enumerate(clients_in_lobby):
                 c.symbol = symbols[i]
-                c.conn.send(f"START_GAME {c.symbol}".encode('utf-8'))
+                c.conn.send(f"НАЧАТЬ_ИГРУ {c.symbol}".encode('utf-8'))
 
 def handle_play(client, move=None):
     if not move:
-        client.conn.send(b"PLAY_FAIL")
+        client.conn.send(b"ОШИБКА_ХОДА")
         return
     with lock:
         if client.lobby:
             for c in lobbies[client.lobby]:
                 if c != client:
-                    c.conn.send(f"PLAY {move}".encode('utf-8'))
+                    c.conn.send(f"ХОД {move}".encode('utf-8'))
 
 def handle_exit(client):
     with lock:
@@ -117,12 +117,12 @@ def handle_exit(client):
                 del lobbies[client.lobby]
         if client.username:
             del clients[client.username]
-        client.conn.send(b"EXIT_SUCCESS")
+        client.conn.send(b"УСПЕШНЫЙ_ВЫХОД")
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('0.0.0.0', 12345))
     server.listen(5)
-    logging.info("Server started on port 12345")
+    logging.info("Сервер работает на порту: 12345")
 
     try:
         while True:
@@ -130,7 +130,7 @@ def main():
             client = Client(conn, addr)
             threading.Thread(target=handle_client, args=(client,)).start()
     except Exception as e:
-        logging.error(f"Server error: {e}")
+        logging.error(f"Ошибка сервера: {e}")
     finally:
         server.close()
 
