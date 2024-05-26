@@ -24,7 +24,7 @@ def handle_client(client):
             command, *args = msg.split()
             handler = {
                 "РЕГИСТРАЦИЯ": handle_register,
-                "ЛОГИН": handle_login,
+                "АВТОРИЗАЦИЯ": handle_login,
                 "СОЗДАТЬ_ЛОББИ": handle_create_lobby,
                 "ПРИСОЕДЕНИТЬСЯ_К_ЛОББИ": handle_join_lobby,
                 "НАЧАТЬ": handle_start_game,
