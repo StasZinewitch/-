@@ -2,7 +2,7 @@ import socket
 import threading
 import pygame
 import sys
-
+import logging
 
 WIDTH, HEIGHT = 600, 600
 LINE_WIDTH, CIRCLE_WIDTH, CROSS_WIDTH, SPACE = 15, 15, 25, WIDTH // 12
@@ -16,6 +16,8 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption('Tic Tac Toe')
 screen.fill(BG_COLOR)
+
+logging.basicConfig(level=logging.INFO)
 
 board = [[0] * BOARD_COLS for _ in range(BOARD_ROWS)]
 
@@ -68,6 +70,8 @@ def receive_messages(client_socket):
     while True:
         try:
             message = client_socket.recv(1024).decode('utf-8')
+            if not message:
+                break
             if message.startswith("PLAY"):
                 _, move = message.split()
                 row, col = map(int, move.split(','))
@@ -82,24 +86,30 @@ def receive_messages(client_socket):
                 restart()
                 game_over = False
         except Exception as e:
-            print(f"Error: {e}")
+            logging.error(f"Error: {e}")
             client_socket.close()
             break
-
 def main():
     global game_over, player, player_symbol
     player_symbol = None
     game_over = False
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect(('127.0.0.1', 12345))
+    try:
+        client_socket.connect(('127.0.0.1', 12345))
+    except Exception as e:
+        logging.error(f"Connection error: {e}")
+        return
 
     threading.Thread(target=receive_messages, args=(client_socket,)).start()
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                client_socket.send(b"EXIT")
+                try:
+                    client_socket.send(b"EXIT")
+                except Exception as e:
+                    logging.error(f"Error sending exit message: {e}")
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.MOUSEBUTTONDOWN and not game_over and player_symbol:
@@ -109,7 +119,10 @@ def main():
                 if board[clicked_row][clicked_col] == 0:
                     mark_square(clicked_row, clicked_col, player)
                     draw_figures()
-                    client_socket.send(f"PLAY {clicked_row},{clicked_col}".encode('utf-8'))
+                    try:
+                        client_socket.send(f"PLAY {clicked_row},{clicked_col}".encode('utf-8'))
+                    except Exception as e:
+                        logging.error(f"Error sending play message: {e}")
                     if check_winner() or is_board_full():
                         game_over = True
 
