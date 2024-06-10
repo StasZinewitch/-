@@ -1,16 +1,16 @@
+import pygame
 import socket
 import threading
-import pygame
 import sys
 import logging
 
+# Pygame setup
 WIDTH, HEIGHT = 600, 600
 LINE_WIDTH, CIRCLE_WIDTH, CROSS_WIDTH, SPACE = 15, 15, 25, WIDTH // 12
 BOARD_ROWS, BOARD_COLS = 3, 3
 SQUARE_SIZE, CIRCLE_RADIUS = WIDTH // BOARD_COLS, WIDTH // 9
 RED, BG_COLOR, LINE_COLOR = (255, 0, 0), (28, 170, 156), (23, 145, 135)
 CIRCLE_COLOR, CROSS_COLOR = (239, 231, 200), (84, 84, 84)
-
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -20,8 +20,6 @@ screen.fill(BG_COLOR)
 logging.basicConfig(level=logging.INFO)
 
 board = [[0] * BOARD_COLS for _ in range(BOARD_ROWS)]
-
-
 cross_img = pygame.image.load('cross.png')
 cross_img = pygame.transform.scale(cross_img, (SQUARE_SIZE - 2 * SPACE, SQUARE_SIZE - 2 * SPACE))
 
@@ -35,7 +33,7 @@ def draw_figures():
     for row in range(BOARD_ROWS):
         for col in range(BOARD_COLS):
             if board[row][col] == 1:
-                pygame.draw.circle(screen, CIRCLE_COLOR, (col * SQUARE_SIZE + SQUARE_SIZE//2, row * SQUARE_SIZE + SQUARE_SIZE//2), CIRCLE_RADIUS, CIRCLE_WIDTH)
+                pygame.draw.circle(screen, CIRCLE_COLOR, (col * SQUARE_SIZE + SQUARE_SIZE // 2, row * SQUARE_SIZE + SQUARE_SIZE // 2), CIRCLE_RADIUS, CIRCLE_WIDTH)
             elif board[row][col] == 2:
                 cross_rect = cross_img.get_rect(center=(col * SQUARE_SIZE + SQUARE_SIZE // 2, row * SQUARE_SIZE + SQUARE_SIZE // 2))
                 screen.blit(cross_img, cross_rect)
@@ -59,75 +57,142 @@ def check_winner():
 def is_board_full():
     return all(board[row][col] != 0 for row in range(BOARD_ROWS) for col in range(BOARD_COLS))
 
-def restart():
-    global board
+def restart_game():
     screen.fill(BG_COLOR)
     draw_lines()
-    board = [[0] * BOARD_COLS for _ in range(BOARD_ROWS)]
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            board[row][col] = 0
 
-def receive_messages(client_socket):
-    global game_over, player, player_symbol
+def draw_menu(text, pos, color=(0,0,0)):
+    font = pygame.font.SysFont(None, 55)
+    menu_text = font.render(text, True, color)
+    screen.blit(menu_text, pos)
+
+def handle_server_message(msg, sock):
+    global game_over, player, authenticated, in_menu
+    command, *args = msg.split()
+    if command == "НАЧАТЬ_ИГРУ":
+        player_symbol = args[0]
+        player = 1 if player_symbol == 'X' else 2
+        logging.info(f"Вы играете за: {player_symbol}")
+    elif command == "ХОД":
+        move = args[0]
+        row, col = map(int, move.split(","))
+        opponent = 2 if player == 1 else 1
+        mark_square(row, col, opponent)
+        draw_figures()
+        if check_winner():
+            game_over = True
+            logging.info("Ваш противник победил!")
+        elif is_board_full():
+            game_over = True
+            logging.info("Ничья!")
+    elif command in ("УСПЕШНАЯ_РЕГИСТРАЦИЯ", "УСПЕШНАЯ_АВТОРИЗАЦИЯ"):
+        authenticated = True
+        show_main_menu()
+    elif command == "МЕНЮ":
+        in_menu = True
+        show_main_menu()
+
+def receive_messages(sock):
     while True:
         try:
-            message = client_socket.recv(1024).decode('utf-8')
-            if not message:
+            msg = sock.recv(1024).decode('utf-8')
+            if not msg:
                 break
-            if message.startswith("ХОД"):
-                _, move = message.split()
-                row, col = map(int, move.split(','))
-                mark_square(row, col, 1 if player_symbol == 'O' else 2)
-                draw_figures()
-                if check_winner() or is_board_full():
-                    game_over = True
-            elif message.startswith("НАЧАТЬ_ИГРУ"):
-                _, symbol = message.split()
-                player_symbol = symbol
-                player = 1 if symbol == 'X' else 2
-                restart()
-                game_over = False
-        except Exception as e:
-            logging.error(f"ОШИБКА: {e}")
-            client_socket.close()
+            handle_server_message(msg, sock)
+        except socket.error as e:
+            logging.error(f"Ошибка при получении сообщения: {e}")
             break
+
+def show_main_menu():
+    screen.fill(BG_COLOR)
+    draw_menu('1. СОЗДАТЬ ЛОББИ', (50, 100))
+    draw_menu('2. ПРИСОЕДИНИТЬСЯ К ЛОББИ', (50, 200))
+    draw_menu('3. ИГРАТЬ ОДНОМУ', (50, 300))
+
+def show_auth_menu():
+    screen.fill(BG_COLOR)
+    draw_menu('1. РЕГИСТРАЦИЯ', (50, 100))
+    draw_menu('2. АВТОРИЗАЦИЯ', (50, 200))
+
+def handle_menu_click(mouseX, mouseY, sock):
+    global authenticated, in_menu
+    if 50 < mouseX < 550:
+        if not authenticated:
+            if 100 < mouseY < 150:
+                username = input("Введите имя пользователя: ")
+                password = input("Введите пароль: ")
+                sock.send(f"РЕГИСТРАЦИЯ {username} {password}".encode('utf-8'))
+            elif 200 < mouseY < 250:
+                username = input("Введите имя пользователя: ")
+                password = input("Введите пароль: ")
+                sock.send(f"АВТОРИЗАЦИЯ {username} {password}".encode('utf-8'))
+        elif in_menu:
+            if 100 < mouseY < 150:
+                lobby_name = input("Введите имя лобби: ")
+                sock.send(f"СОЗДАТЬ_ЛОББИ {lobby_name}".encode('utf-8'))
+            elif 200 < mouseY < 250:
+                lobby_name = input("Введите имя лобби: ")
+                sock.send(f"ПРИСОЕДИНИТЬСЯ_К_ЛОББИ {lobby_name}".encode('utf-8'))
+            elif 300 < mouseY < 350:
+                restart_game()
+                in_menu = False
+
 def main():
-    global game_over, player, player_symbol
-    player_symbol = None
+    global game_over, player, authenticated, in_menu
+    draw_lines()
+    running = True
+    player = 1
     game_over = False
+    authenticated = False
+    in_menu = True
 
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        client_socket.connect(('127.0.0.1', 12345))
-    except Exception as e:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(('127.0.0.1', 12345))
+    except socket.error as e:
         logging.error(f"Ошибка подключения: {e}")
-        return
+        sys.exit()
 
-    threading.Thread(target=receive_messages, args=(client_socket,)).start()
+    threading.Thread(target=lambda: receive_messages(sock), daemon=True).start()
+    show_auth_menu()
 
-    while True:
+    while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                try:
-                    client_socket.send(b"EXIT")
-                except Exception as e:
-                    logging.error(f"Ошибка при отправке сообщения о выходе: {e}")
-                pygame.quit()
+                running = False
+                sock.send(b"ВЫХОД")
+                sock.close()
                 sys.exit()
-            if event.type == pygame.MOUSEBUTTONDOWN and not game_over and player_symbol:
+            if event.type == pygame.MOUSEBUTTONDOWN:
                 mouseX, mouseY = event.pos
-                clicked_row, clicked_col = mouseY // SQUARE_SIZE, mouseX // SQUARE_SIZE
+                if authenticated and not in_menu and not game_over:
+                    clicked_row = mouseY // SQUARE_SIZE
+                    clicked_col = mouseX // SQUARE_SIZE
+                    if board[clicked_row][clicked_col] == 0:
+                        mark_square(clicked_row, clicked_col, player)
+                        draw_figures()
+                        if check_winner():
+                            game_over = True
+                            logging.info("Вы победили!")
+                        elif is_board_full():
+                            game_over = True
+                            logging.info("Ничья!")
+                        else:
+                            sock.send(f"ИГРАТЬ {clicked_row},{clicked_col}".encode('utf-8'))
+                            player = 2 if player == 1 else 1
+                else:
+                    handle_menu_click(mouseX, mouseY, sock)
 
-                if board[clicked_row][clicked_col] == 0:
-                    mark_square(clicked_row, clicked_col, player)
-                    draw_figures()
-                    try:
-                        client_socket.send(f"ХОД {clicked_row},{clicked_col}".encode('utf-8'))
-                    except Exception as e:
-                        logging.error(f"Ошибка при отправке сообщения о воспроизведении: {e}")
-                    if check_winner() or is_board_full():
-                        game_over = True
+            if game_over and event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    restart_game()
+                    game_over = False
+                    player = 1
 
         pygame.display.update()
 
 if __name__ == "__main__":
-    draw_lines()
     main()
