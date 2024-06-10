@@ -1,11 +1,14 @@
 import socket
 import threading
-import random
 import logging
+import random
+
+logging.basicConfig(level=logging.INFO)
+
 clients = {}
 lobbies = {}
 lock = threading.Lock()
-logging.basicConfig(level=logging.INFO)
+
 class Client:
     def __init__(self, conn, addr):
         self.conn = conn
@@ -26,10 +29,11 @@ def handle_client(client):
                 "РЕГИСТРАЦИЯ": handle_register,
                 "АВТОРИЗАЦИЯ": handle_login,
                 "СОЗДАТЬ_ЛОББИ": handle_create_lobby,
-                "ПРИСОЕДЕНИТЬСЯ_К_ЛОББИ": handle_join_lobby,
+                "ПРИСОЕДИНИТЬСЯ_К_ЛОББИ": handle_join_lobby,
                 "НАЧАТЬ": handle_start_game,
                 "ИГРАТЬ": handle_play,
-                "ВЫХОД": handle_exit
+                "ВЫХОД": handle_exit,
+                "МЕНЮ": handle_menu
             }.get(command, lambda *args: None)
             handler(client, *args)
     except Exception as e:
@@ -37,7 +41,6 @@ def handle_client(client):
     finally:
         handle_exit(client)
         conn.close()
-
 
 def handle_register(client, username=None, password=None):
     if not username or not password:
@@ -49,6 +52,7 @@ def handle_register(client, username=None, password=None):
         else:
             clients[username] = {'пароль': password, 'клиент': client}
             client.conn.send(b"УСПЕШНАЯ_РЕГИСТРАЦИЯ")
+            client.conn.send(b"МЕНЮ")
 
 def handle_login(client, username=None, password=None):
     if not username or not password:
@@ -61,6 +65,7 @@ def handle_login(client, username=None, password=None):
             client.username = username
             clients[username]['клиент'] = client
             client.conn.send(b"УСПЕШНАЯ_АВТОРИЗАЦИЯ")
+            client.conn.send(b"МЕНЮ")
 
 def handle_create_lobby(client, lobby_name=None):
     if not lobby_name:
@@ -72,7 +77,7 @@ def handle_create_lobby(client, lobby_name=None):
         else:
             lobbies[lobby_name] = [client]
             client.lobby = lobby_name
-            client.conn.send(b"ЛОББИ_СОЗДАННО")
+            client.conn.send(b"ЛОББИ_СОЗДАНО")
 
 def handle_join_lobby(client, lobby_name=None):
     if not lobby_name:
@@ -84,7 +89,7 @@ def handle_join_lobby(client, lobby_name=None):
         else:
             lobbies[lobby_name].append(client)
             client.lobby = lobby_name
-            client.conn.send(b"УСПЕШНОЕ_ПРИСОЕДИНЕНИЕ")
+            client.conn.send(b"ПРИСОЕДИНЕНИЕ_УСПЕШНО")
 
 def handle_start_game(client):
     with lock:
@@ -93,8 +98,8 @@ def handle_start_game(client):
             client.conn.send(b"ОШИБКА_СТАРТА")
         else:
             clients_in_lobby = lobbies[lobby_name]
+            random.shuffle(clients_in_lobby)  # случайный выбор первого игрока
             symbols = ['X', 'O']
-            random.shuffle(symbols)
             for i, c in enumerate(clients_in_lobby):
                 c.symbol = symbols[i]
                 c.conn.send(f"НАЧАТЬ_ИГРУ {c.symbol}".encode('utf-8'))
@@ -118,6 +123,11 @@ def handle_exit(client):
         if client.username:
             del clients[client.username]
         client.conn.send(b"УСПЕШНЫЙ_ВЫХОД")
+
+def handle_menu(client):
+    menu = "1. СОЗДАТЬ_ЛОББИ\n2. ПРИСОЕДИНИТЬСЯ_К_ЛОББИ\n3. ИГРАТЬ_ОДНОМУ"
+    client.conn.send(menu.encode('utf-8'))
+
 def main():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('0.0.0.0', 12345))
@@ -127,6 +137,7 @@ def main():
     try:
         while True:
             conn, addr = server.accept()
+            logging.info(f"Подключение от {addr}")
             client = Client(conn, addr)
             threading.Thread(target=handle_client, args=(client,)).start()
     except Exception as e:
