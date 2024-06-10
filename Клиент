@@ -4,7 +4,7 @@ import threading
 import sys
 import logging
 
-# Pygame setup
+
 WIDTH, HEIGHT = 600, 600
 LINE_WIDTH, CIRCLE_WIDTH, CROSS_WIDTH, SPACE = 15, 15, 25, WIDTH // 12
 BOARD_ROWS, BOARD_COLS = 3, 3
